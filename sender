@@ -1,0 +1,46 @@
+#include <WiFi.h>
+#include <esp_now.h>
+#include <Adafruit_AHT10.h>
+
+Adafruit_AHT10 aht;
+sensors_event_t aht_rh, aht_tc;
+uint8_t recv_addr[] = {0x10, 0x52, 0x1C, 0x74, 0x4D, 0x48};
+esp_now_peer_info_t peer;
+typedef struct data_t {
+  float tc;
+  float rh;
+  int seq = 0;
+  bool status;  // last recv status
+} data_t;
+data_t data;
+
+void OnDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
+  Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Recv success" : "Recv fail");
+  data.status = status;
+}
+ 
+void setup() {
+  Serial.begin(115200);
+  aht.begin();
+  
+  WiFi.mode(WIFI_STA);
+  esp_now_init();
+  esp_now_register_send_cb(OnDataSent);
+  
+  memcpy(peer.peer_addr, recv_addr, 6);
+  peer.channel = 0;  
+  peer.encrypt = false;
+  esp_now_add_peer(&peer);
+}
+ 
+void loop() {
+  aht.getEvent(&aht_rh, &aht_tc);
+  data.tc = aht_tc.temperature;
+  data.rh = aht_rh.relative_humidity;
+  data.seq++;
+  
+  esp_err_t result = esp_now_send(recv_addr, (uint8_t *) &data, sizeof(data));  
+  Serial.print(result == ESP_OK ? "Send success, " : "Send error, ");
+  
+  delay(5000);
+}
